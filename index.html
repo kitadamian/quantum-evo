@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Quantum Evo - Gra .io o AI i Neuronach</title>
+    <style>
+        :root {
+            --primary-color: #00f3ff; /* Cyjanowy neon */
+            --secondary-color: #ff0055; /* Magentowy neon */
+            --bg-color: #050510; /* Ciemny granat/czarny */
+            --ui-font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* Blokuje zoomowanie i przewijanie na mobile */
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: var(--ui-font);
+            color: white;
+        }
+
+        /* Gra renderowana na Canvas */
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Warstwa interfejsu użytkownika (UI) */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Pozwala klikać w grę przez UI */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* Elementy interaktywne w UI muszą mieć pointer-events: auto */
+        .interactive {
+            pointer-events: auto;
+        }
+
+        /* HUD: Wynik i czas */
+        .hud {
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-shadow: 0 0 10px var(--primary-color);
+        }
+
+        .hud-item {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 15px;
+            border-radius: 20px;
+            border: 1px solid var(--primary-color);
+        }
+
+        /* Ekrany Menu (Start / Koniec) */
+        .modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(10, 10, 25, 0.95);
+            border: 2px solid var(--primary-color);
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.3);
+            padding: 30px;
+            text-align: center;
+            border-radius: 15px;
+            max-width: 90%;
+            width: 400px;
+            display: none; /* Domyślnie ukryte */
+            flex-direction: column;
+            gap: 15px;
+            backdrop-filter: blur(5px);
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 2rem;
+            background: -webkit-linear-gradient(45deg, var(--primary-color), #fff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        p {
+            color: #ccc;
+            line-height: 1.5;
+            font-size: 0.95rem;
+        }
+
+        button {
+            background: linear-gradient(90deg, var(--secondary-color), #ff5e00);
+            border: none;
+            padding: 15px;
+            color: white;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: transform 0.2s, box-shadow 0.2s;
+            outline: none;
+        }
+
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px var(--secondary-color);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        /* Stopka z informacjami o autorze */
+        .author-footer {
+            text-align: center;
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 20px;
+            border-top: 1px solid #333;
+            padding-top: 10px;
+        }
+
+        .author-footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        .author-footer a:hover {
+            color: white;
+            text-shadow: 0 0 5px var(--primary-color);
+        }
+
+        /* Ikona dźwięku */
+        #mute-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: transparent;
+            border: 1px solid white;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            padding: 0;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        
+        #mute-btn:hover {
+            background: rgba(255,255,255,0.1);
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Mobile controls hint */
+        .controls-hint {
+            font-size: 0.8rem;
+            color: #888;
+            margin-top: 5px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Warstwa gry -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Warstwa interfejsu -->
+    <div id="ui-layer">
+        
+        <div class="hud">
+            <div class="hud-item">Masa: <span id="scoreVal">10</span> Q</div>
+            <div class="hud-item" id="rankVal">Rank: 1/50</div>
+        </div>
+
+        <button id="mute-btn" class="interactive">🔊</button>
+
+        <!-- Menu Startowe -->
+        <div id="startScreen" class="modal active interactive">
+            <h1>Quantum Evo</h1>
+            <p>Jesteś kropką kwantową w sieci neuronowej. Pochłaniaj <strong>neurony</strong> i mniejsze algorytmy, by rosnąć.</p>
+            <p class="controls-hint">PC: Myszka | Mobile: Dotyk</p>
+            <button id="startBtn">POCZNAK SYMUlACJĘ</button>
+            <div class="author-footer">
+                Stworzone przez: <a href="https://linktr.ee/kitadamian" target="_blank">Damian Kita</a>
+            </div>
+        </div>
+
+        <!-- Ekran Koniec Gry -->
+        <div id="gameOverScreen" class="modal interactive">
+            <h1>Koniec Symulacji</h1>
+            <p>Twoja jednostka została wchłonięta.</p>
+            <p>Finalna masa: <span id="finalScore" style="color:var(--primary-color); font-weight:bold;">0</span> Q</p>
+            <button id="restartBtn">ZRESTARTUJ SYSTEM</button>
+            <div class="author-footer">
+                Autor: <a href="https://linktr.ee/kitadamian" target="_blank">Damian Kita</a>
+            </div>
+        </div>
+
+    </div>
+
+<script>
+/**
+ * Quantum Evo - Gra przeglądarkowa
+ * Autor: Damian Kita
+ */
+
+// --- KONFIGURACJA ---
+const CONFIG = {
+    worldSize: 3000,
+    playerStartRadius: 20,
+    maxPlayerRadius: 150,
+    foodCount: 400,
+    botCount: 25,
+    colors: {
+        player: '#00f3ff',
+        bot: '#ff0055',
+        foodNeuron: '#00ff44', // Neurony - zielone
+        foodData: '#ffff00',   // Dane - żółte
+        grid: '#1a1a2e'
+    },
+    cameraSmoothness: 0.1
+};
+
+// --- SYSTEM AUDIO (Web Audio API) ---
+const AudioSys = {
+    ctx: null,
+    isMuted: false,
+    bgmOscillators: [],
+
+    init() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    },
+
+    playTone(freq, type, duration, vol = 0.1) {
+        if (this.isMuted || !this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + duration);
+    },
+
+    startMusic() {
+        if (this.isMuted || !this.ctx || this.bgmOscillators.length > 0) return;
+        
+        // Proceduralny ambient dark synth
+        const createDrone = (freq, type, pan) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            const panner = this.ctx.createStereoPanner();
+            
+            osc.type = type;
+            osc.frequency.value = freq;
+            
+            gain.gain.value = 0.03;
+            
+            panner.pan.value = pan;
+
+            osc.connect(gain);
+            gain.connect(panner);
+            panner.connect(this.ctx.destination);
+            
+            osc.start();
+            return { osc, gain };
+        };
+
+        this.bgmOscillators.push(createDrone(50, 'sawtooth', -0.5)); // Bas lewy
+        this.bgmOscillators.push(createDrone(52, 'sine', 0.5));     // Bas prawy (harmonia)
+        
+        // LFO modulacja dla "cyfrowego" brzmienia
+        const lfo = this.ctx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.2;
+        const lfoGain = this.ctx.createGain();
+        lfoGain.gain.value = 500;
+        lfo.connect(lfoGain);
+        // Prosta modulacja filtra (niedokończona dla uproszczenia, tylko surowe drony)
+        lfo.start();
+        this.bgmOscillators.push({osc: lfo, gain: lfoGain});
+    },
+
+    stopMusic() {
+        this.bgmOscillators.forEach(o => {
+            try { o.osc.stop(); } catch(e){}
+        });
+        this.bgmOscillators = [];
+    },
+
+    playEatSound() {
+        // Wysoki dźwięk "bloop"
+        this.playTone(600 + Math.random() * 200, 'sine', 0.1, 0.05);
+    },
+
+    playGrowSound() {
+        // Niższy dźwięk przy wzroście
+        this.playTone(200, 'square', 0.2, 0.05);
+    },
+
+    playDieSound() {
+        // Szum zniżający się
+        if (this.isMuted || !this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 1);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 1);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 1);
+    }
+};
+
+// --- SILNIK GRY ---
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: false }); // Optymalizacja
+let animationId;
+let lastTime = 0;
+
+// Stan Gry
+const game = {
+    width: 0,
+    height: 0,
+    active: false,
+    entities: {
+        player: null,
+        foods: [],
+        bots: []
+    },
+    camera: { x: 0, y: 0 }
+};
+
+// Klasy Obiektów
+
+class Entity {
+    constructor(x, y, radius, color) {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.color = color;
+        this.markedForDeletion = false;
+        this.pulse = 0;
+    }
+
+    draw(ctx) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        
+        // Efekt świecenia (Glow) - kosztowny, ale wygląda dobrze
+        // Dla Mobile można ograniczyć shadowBlur
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = this.color;
+        ctx.stroke();
+        ctx.shadowBlur = 0; // Reset
+    }
+}
+
+class Player extends Entity {
+    constructor() {
+        super(CONFIG.worldSize / 2, CONFIG.worldSize / 2, CONFIG.playerStartRadius, CONFIG.colors.player);
+        this.speed = 4;
+        this.targetX = this.x;
+        this.targetY = this.y;
+        this.score = 10;
+        this.angle = 0;
+    }
+
+    update() {
+        // Interpolacja ruchu (płynność)
+        const dx = this.targetX - (game.camera.x + game.width / 2);
+        const dy = this.targetY - (game.camera.y + game.height / 2);
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        // Kąt obrotu
+        if (dist > 0) this.angle = Math.atan2(dy, dx);
+
+        // Prędkość zależy od rozmiaru (większy = wolniejszy)
+        const currentSpeed = Math.max(1, this.speed - (this.radius / 50));
+
+        if (dist > currentSpeed) {
+            this.x += Math.cos(this.angle) * currentSpeed;
+            this.y += Math.sin(this.angle) * currentSpeed;
+        }
+
+        // Granice świata
+        this.x = Math.max(this.radius, Math.min(CONFIG.worldSize - this.radius, this.x));
+        this.y = Math.max(this.radius, Math.min(CONFIG.worldSize - this.radius, this.y));
+    }
+
+    draw(ctx) {
+        // Rysowanie "jądra" AI
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+
+        // Cień
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = this.color;
+
+        // Główne ciało
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+
+        // "Oko" lub czujnik AI
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(this.radius * 0.4, 0, this.radius * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Pierścienie kwantowe
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius * 0.7 + Math.sin(Date.now() / 200) * 2, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    grow(amount) {
+        // Powolny wzrost
+        this.score += amount;
+        const targetRadius = CONFIG.playerStartRadius + Math.sqrt(this.score) * 1.5;
+        if (targetRadius > this.radius && targetRadius < CONFIG.maxPlayerRadius) {
+            this.radius = targetRadius;
+        }
+    }
+}
+
+class Bot extends Entity {
+    constructor() {
+        const x = Math.random() * CONFIG.worldSize;
+        const y = Math.random() * CONFIG.worldSize;
+        const size = CONFIG.playerStartRadius + Math.random() * 40; // Boty mogą być różne
+        super(x, y, size, CONFIG.colors.bot);
+        
+        this.vx = (Math.random() - 0.5) * 2;
+        this.vy = (Math.random() - 0.5) * 2;
+        this.changeDirTimer = 0;
+        this.pulseSpeed = Math.random() * 0.1;
+    }
+
+    update(player) {
+        this.pulse += this.pulseSpeed;
+
+        // Prosta AI
+        // Jeśli bot jest większy od gracza i blisko - goni
+        const distToPlayer = Math.hypot(this.x - player.x, this.y - player.y);
+        
+        if (this.radius > player.radius * 1.1 && distToPlayer < 300) {
+            const angle = Math.atan2(player.y - this.y, player.x - this.x);
+            this.vx += Math.cos(angle) * 0.1;
+            this.vy += Math.sin(angle) * 0.1;
+        } 
+        // Jeśli bot jest mniejszy - ucieka
+        else if (this.radius * 1.1 < player.radius && distToPlayer < 250) {
+            const angle = Math.atan2(player.y - this.y, player.x - this.x);
+            this.vx -= Math.cos(angle) * 0.15;
+            this.vy -= Math.sin(angle) * 0.15;
+        }
+        // Inaczej losowa wędrówka
+        else {
+            this.changeDirTimer--;
+            if (this.changeDirTimer <= 0) {
+                this.vx = (Math.random() - 0.5) * (this.radius > 30 ? 1.5 : 3); // Większe wolniejsze
+                this.vy = (Math.random() - 0.5) * (this.radius > 30 ? 1.5 : 3);
+                this.changeDirTimer = 60 + Math.random() * 60;
+            }
+        }
+
+        // Normalizacja wektora prędkości
+        const speed = Math.hypot(this.vx, this.vy);
+        const maxSpeed = Math.max(0.5, 3 - (this.radius / 40)); // Prędkość zależna od rozmiaru
+        
+        if (speed > maxSpeed) {
+            this.vx = (this.vx / speed) * maxSpeed;
+            this.vy = (this.vy / speed) * maxSpeed;
+        }
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Odbijanie od granic
+        if (this.x < this.radius || this.x > CONFIG.worldSize - this.radius) this.vx *= -1;
+        if (this.y < this.radius || this.y > CONFIG.worldSize - this.radius) this.vy *= -1;
+        
+        // Utrzymanie w granicach
+        this.x = Math.max(this.radius, Math.min(CONFIG.worldSize - this.radius, this.x));
+        this.y = Math.max(this.radius, Math.min(CONFIG.worldSize - this.radius, this.y));
+    }
+
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+
+        // Kształt robota (kwadrat obrócony)
+        ctx.rotate(this.pulse);
+        ctx.fillStyle = this.color;
+        ctx.fillRect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
+
+        // Oczy
+        ctx.fillStyle = '#000';
+        ctx.fillRect(-this.radius * 0.5, -this.radius * 0.2, this.radius * 0.3, this.radius * 0.3);
+        ctx.fillRect(this.radius * 0.2, -this.radius * 0.2, this.radius * 0.3, this.radius * 0.3);
+
+        ctx.restore();
+    }
+}
+
+class Food extends Entity {
+    constructor() {
+        const x = Math.random() * CONFIG.worldSize;
+        const y = Math.random() * CONFIG.worldSize;
+        const isNeuron = Math.random() > 0.3;
+        const color = isNeuron ? CONFIG.colors.foodNeuron : CONFIG.colors.foodData;
+        const size = isNeuron ? 6 + Math.random() * 4 : 3 + Math.random() * 2;
+        
+        super(x, y, size, color);
+        this.isNeuron = isNeuron;
+        this.points = isNeuron ? 5 : 1;
+        this.offset = Math.random() * Math.PI * 2;
+    }
+
+    draw(ctx) {
+        // Animacja unoszenia się
+        const floatY = Math.sin((Date.now() / 500) + this.offset) * 2;
+        
+        ctx.save();
+        ctx.translate(this.x, this.y + floatY);
+        
+        if (this.isNeuron) {
+            // Rysowanie neuronu (kółko z połączeniami)
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = this.color;
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Axon / Dendrite linie
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(this.radius * 2, this.radius * 2);
+            ctx.stroke();
+        } else {
+            // Dane (małe kwadraty)
+            ctx.fillStyle = this.color;
+            ctx.shadowBlur = 2;
+            ctx.fillRect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
+        }
+        
+        ctx.restore();
+    }
+}
+
+// --- FUNKCJE POMOCNICZE ---
+
+function resize() {
+    game.width = window.innerWidth;
+    game.height = window.innerHeight;
+    canvas.width = game.width;
+    canvas.height = game.height;
+}
+
+function spawnFood(count) {
+    for(let i=0; i<count; i++) {
+        game.entities.foods.push(new Food());
+    }
+}
+
+function spawnBots(count) {
+    for(let i=0; i<count; i++) {
+        game.entities.bots.push(new Bot());
+    }
+}
+
+function drawGrid(ctx) {
+    ctx.save();
+    ctx.strokeStyle = CONFIG.colors.grid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    
+    const gridSize = 100;
+    
+    // Obliczanie widocznego obszaru gridu
+    const startX = Math.floor(game.camera.x / gridSize) * gridSize;
+    const startY = Math.floor(game.camera.y / gridSize) * gridSize;
+    const endX = startX + game.width + gridSize;
+    const endY = startY + game.height + gridSize;
+
+    for (let x = startX; x <= endX; x += gridSize) {
+        ctx.moveTo(x - game.camera.x, 0);
+        ctx.lineTo(x - game.camera.x, game.height);
+    }
+    for (let y = startY; y <= endY; y += gridSize) {
+        ctx.moveTo(0, y - game.camera.y);
+        ctx.lineTo(game.width, y - game.camera.y);
+    }
+    
+    ctx.stroke();
+
+    // Ramka świata
+    ctx.strokeStyle = '#ff0055';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(-game.camera.x, -game.camera.y, CONFIG.worldSize, CONFIG.worldSize);
+    
+    ctx.restore();
+}
+
+function checkCollisions() {
+    const player = game.entities.player;
+
+    // Jedzenie
+    for (let i = game.entities.foods.length - 1; i >= 0; i--) {
+        const f = game.entities.foods[i];
+        const dist = Math.hypot(player.x - f.x, player.y - f.y);
+        
+        if (dist < player.radius + f.radius) {
+            player.grow(f.points);
+            game.entities.foods.splice(i, 1);
+            game.entities.foods.push(new Food()); // Od razu odnawiaj jedzenie
+            if (f.isNeuron) AudioSys.playEatSound();
+        }
+    }
+
+    // Boty vs Gracz
+    for (let i = game.entities.bots.length - 1; i >= 0; i--) {
+        const b = game.entities.bots[i];
+        const dist = Math.hypot(player.x - b.x, player.y - b.y);
+
+        if (dist < player.radius + b.radius) {
+            // Jeśli gracz jest o 10% większy
+            if (player.radius > b.radius * 1.1) {
+                // Gracz zjada bota
+                player.grow(b.radius * 2); // Duży bonus
+                game.entities.bots.splice(i, 1);
+                AudioSys.playGrowSound();
+                spawnBots(1); // Nowy bot wchodzi do gry
+            } 
+            // Jeśli bot jest o 10% większy
+            else if (b.radius > player.radius * 1.1) {
+                // Game Over
+                gameOver();
+            }
+        }
+    }
+}
+
+function updateHUD() {
+    document.getElementById('scoreVal').innerText = Math.floor(game.entities.player.score);
+    
+    // Prosty ranking symulowany
+    const rank = Math.floor(Math.random() * 5) + 1; // Losowo od 1 do 5 dla dynamiki
+    document.getElementById('rankVal').innerText = `Rank: ${rank}/50`;
+}
+
+// --- GŁÓWNA PĘTLA ---
+
+function loop(timestamp) {
+    if (!game.active) return;
+
+    const dt = timestamp - lastTime;
+    lastTime = timestamp;
+
+    // 1. Update Logic
+    game.entities.player.update();
+    game.entities.bots.forEach(bot => bot.update(game.entities.player));
+    checkCollisions();
+    
+    // Kamera podąża za graczem
+    // Cel = środek ekranu w pozycji gracza
+    const targetCamX = game.entities.player.x - game.width / 2;
+    const targetCamY = game.entities.player.y - game.height / 2;
+    
+    game.camera.x += (targetCamX - game.camera.x) * CONFIG.cameraSmoothness;
+    game.camera.y += (targetCamY - game.camera.y) * CONFIG.cameraSmoothness;
+
+    updateHUD();
+
+    // 2. Render
+    // Tło
+    ctx.fillStyle = CONFIG.colors.grid;
+    ctx.clearRect(0, 0, game.width, game.height);
+    
+    drawGrid(ctx);
+
+    // Rysowanie obiektów (względem kamery)
+    ctx.save();
+    ctx.translate(-game.camera.x, -game.camera.y);
+
+    // Optymalizacja: rysuj tylko to co widoczne (+ buffer)
+    const viewMargin = 100;
+    const viewLeft = game.camera.x - viewMargin;
+    const viewRight = game.camera.x + game.width + viewMargin;
+    const viewTop = game.camera.y - viewMargin;
+    const viewBottom = game.camera.y + game.height + viewMargin;
+
+    // Helper do sprawdzenia widoczności
+    const isVisible = (x, y, r) => {
+        return x + r > viewLeft && x - r < viewRight && y + r > viewTop && y - r < viewBottom;
+    };
+
+    game.entities.foods.forEach(f => {
+        if (isVisible(f.x, f.y, f.radius)) f.draw(ctx);
+    });
+
+    game.entities.bots.forEach(b => {
+        if (isVisible(b.x, b.y, b.radius)) b.draw(ctx);
+    });
+
+    game.entities.player.draw(ctx);
+
+    ctx.restore();
+
+    animationId = requestAnimationFrame(loop);
+}
+
+// --- ZARZĄDZANIE STANEM GRY ---
+
+function initGame() {
+    game.entities.player = new Player();
+    game.entities.foods = [];
+    game.entities.bots = [];
+    spawnFood(CONFIG.foodCount);
+    spawnBots(CONFIG.botCount);
+    game.camera = { x: 0, y: 0 };
+    
+    document.getElementById('scoreVal').innerText = CONFIG.playerStartRadius;
+}
+
+function startGame() {
+    initGame();
+    game.active = true;
+    document.getElementById('startScreen').classList.remove('active');
+    document.getElementById('gameOverScreen').classList.remove('active');
+    
+    AudioSys.init(); // Wymagane interakcji użytkownika
+    AudioSys.startMusic();
+    
+    lastTime = performance.now();
+    loop(lastTime);
+}
+
+function gameOver() {
+    game.active = false;
+    cancelAnimationFrame(animationId);
+    AudioSys.playDieSound();
+    AudioSys.stopMusic();
+    
+    document.getElementById('finalScore').innerText = Math.floor(game.entities.player.score);
+    document.getElementById('gameOverScreen').classList.add('active');
+}
+
+// --- OBSŁUGA WEJŚCIA (INPUT) ---
+
+// Myszka
+window.addEventListener('mousemove', (e) => {
+    if (game.active) {
+        // Ustaw cel w koordynatach świata (dodajemy przesunięcie kamery)
+        game.entities.player.targetX = e.clientX + game.camera.x;
+        game.entities.player.targetY = e.clientY + game.camera.y;
+    }
+});
+
+// Dotyk (Mobile)
+window.addEventListener('touchmove', (e) => {
+    e.preventDefault(); // Zatrzymaj scrollowanie
+    if (game.active && e.touches.length > 0) {
+        const touch = e.touches[0];
+        game.entities.player.targetX = touch.clientX + game.camera.x;
+        game.entities.player.targetY = touch.clientY + game.camera.y;
+    }
+}, { passive: false });
+
+window.addEventListener('touchstart', (e) => {
+    if (game.active && e.touches.length > 0) {
+        const touch = e.touches[0];
+        game.entities.player.targetX = touch.clientX + game.camera.x;
+        game.entities.player.targetY = touch.clientY + game.camera.y;
+    }
+});
+
+// UI Przyciski
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+
+// Przycisk Wyciszenia
+const muteBtn = document.getElementById('mute-btn');
+muteBtn.addEventListener('click', () => {
+    AudioSys.isMuted = !AudioSys.isMuted;
+    muteBtn.innerText = AudioSys.isMuted ? '🔇' : '🔊';
+    if (AudioSys.isMuted) {
+        AudioSys.stopMusic();
+    } else if (game.active) {
+        AudioSys.startMusic();
+    }
+});
+
+// Inicjalizacja okna
+window.addEventListener('resize', resize);
+resize();
+
+// Startowa generacja tła (tylko ozdobne przed startem)
+spawnFood(20);
+
+</script>
+</body>
+</html>
